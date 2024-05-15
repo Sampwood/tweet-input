@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title></title>
+    <style>
+      #edit {
+        height: 500px;
+        width: 500px;
+        border: 1px solid red;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="edit" contenteditable></div>
+
+    <script>
+      var flag = true;
+      var edit = document.getElementById("edit");
+
+      const createSpan = (content) => {
+        const span = document.createElement("span");
+        if (content) {
+          span.textContent = content;
+        } else {
+          const br = document.createElement("br");
+          span.appendChild(br);
+        }
+        return span
+      }
+
+      // TODO: 优化方法; 获取编辑器下的行元素，并计算光标所在位置
+      const getRangePosition = (range) => {
+        const { startContainer } = range;
+        const parentNode = startContainer.parentNode;
+        let offset = range.startOffset;
+
+        if (parentNode === edit) {
+          if (startContainer.nodeType === Node.TEXT_NODE) {
+            // first input
+            return { lineNode: null, offset: 0 };
+          } else {
+            return { lineNode: startContainer, offset };
+          }
+        }
+
+        const lineNode = parentNode.parentNode;
+        for (const child of lineNode.childNodes) {
+          if (child === parentNode) {
+            break;
+          } else {
+            offset += child.textContent.length;
+          }
+        }
+
+        return { lineNode, offset };
+      };
+      function formatContent() {
+        // NOTE: compare content? No need for now
+        // NOTE: 计算光标所在位置
+        const selection = getSelection();
+        const range = selection.getRangeAt(0);
+        const { lineNode, offset } = getRangePosition(range);
+
+        // TODO: 考虑 1.换行的情况; 2. 后退；3. 复制粘贴富文本的情况；
+        const children = [];
+        let startNode = null;
+        let startOffset = offset;
+        for (var node of edit.childNodes) {
+          // first input
+          if (node.nodeType == 3) {
+            const text = node.textContent;
+            const span = createSpan(text);
+            const newNode = document.createElement("div");
+            newNode.appendChild(span);
+            children.push(newNode);
+          } else {
+            const text = node.textContent.replace(/&nbsp;/g, " ");
+            const words = text.split(" ");
+            if (words.some((w) => w.length > 1 && w.startsWith("#"))) {
+              // convert to span
+              const newNode = document.createElement("div");
+              let preStr = "";
+              for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                const isFirstWord = i === 0;
+                const isLastWord = i === words.length - 1;
+                const data = isLastWord
+                  ? isFirstWord
+                    ? word
+                    : " " + word
+                  : word + " ";
+                if (word.startsWith("#")) {
+                  if (preStr) {
+                    const span = createSpan(preStr);
+                    newNode.appendChild(span);
+                    preStr = "";
+                  }
+
+                  const span = createSpan(word);
+                  span.style.color = "blue";
+                  newNode.appendChild(span);
+                } else {
+                  preStr += data;
+                }
+              }
+              if (preStr) {
+                const span = createSpan(preStr);
+                newNode.appendChild(span);
+                preStr = "";
+              }
+              children.push(newNode);
+            } else {
+              const span = createSpan(text);
+              node.replaceChildren(span);
+              children.push(node);
+            }
+          }
+
+          // set selection range
+          if (node === lineNode) {
+            const parentNode = children[children.length - 1];
+            for (const child of parentNode.childNodes) {
+              const text = child.textContent;
+              if (text.length >= startOffset) {
+                startNode = child.childNodes[0] || child;
+                break;
+              } else {
+                startOffset -= text.length;
+              }
+            }
+          }
+        }
+
+        edit.replaceChildren(...children);
+        if (children) {
+          // set selection
+          const newRange = document.createRange();
+          if (startNode) {
+            newRange.setStart(startNode, startOffset);
+          } else {
+            const lastChild = children[children.length - 1];
+            newRange.setStart(lastChild, lastChild.childNodes.length);
+          }
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+      }
+
+      edit.addEventListener("input", (e) => {
+        if (flag) {
+          formatContent();
+        }
+      });
+
+      edit.addEventListener("compositionstart", function (event) {
+        flag = false;
+      });
+      edit.addEventListener("compositionend", function (event) {
+        flag = true;
+        formatContent();
+      });
+    </script>
+  </body>
+</html>
